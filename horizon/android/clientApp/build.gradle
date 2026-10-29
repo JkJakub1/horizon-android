@@ -1,0 +1,59 @@
+plugins {
+    id "com.android.application"
+}
+
+def horizonRoot = rootProject.projectDir.parentFile
+def generatedJniLibs = layout.buildDirectory.dir("generated/jniLibs")
+
+android {
+    namespace "dev.playhorizon.horizon.client"
+    compileSdk 35
+    ndkVersion "27.2.12479018"
+
+    defaultConfig {
+        applicationId "dev.playhorizon.horizon.client"
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName "0.1.0"
+        ndk {
+            abiFilters "arm64-v8a"
+        }
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs = [generatedJniLibs]
+        }
+    }
+}
+
+tasks.register("buildRustAndroid", Exec) {
+    workingDir horizonRoot
+    commandLine "cargo", "+1.95.0", "build",
+            "--manifest-path", "android/client-native/Cargo.toml",
+            "--locked",
+            "--profile", "fast",
+            "--target", "aarch64-linux-android"
+    doFirst {
+        def ndkHome = System.getenv("ANDROID_NDK_HOME")
+        if (!ndkHome) {
+            throw new GradleException("Set ANDROID_NDK_HOME to NDK 27.2.12479018 before building")
+        }
+        def toolchain = "${ndkHome}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+        environment "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER",
+                "${toolchain}/aarch64-linux-android26-clang"
+        environment "CC_aarch64_linux_android", "${toolchain}/aarch64-linux-android26-clang"
+        environment "AR_aarch64_linux_android", "${toolchain}/llvm-ar"
+    }
+    doLast {
+        copy {
+            from file("${horizonRoot}/target/aarch64-linux-android/fast/libhorizon_android_client.so")
+            into generatedJniLibs.get().dir("arm64-v8a")
+        }
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn("buildRustAndroid")
+}
